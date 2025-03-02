@@ -1,0 +1,441 @@
+---
+title: "Final Project - Time Series"
+output: html_document
+date: "2024-05-15"
+---
+
+```{r}
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(forecast)
+library(CausalImpact)
+library(tseries)
+library(zoo)
+```
+
+```{r}
+#setwd("D:/University of Chicago/Courses/ADSP 31006 IP02 Time Series Analysis and Forecasting/Final #Project")
+```
+
+```{r}
+tmp <- read.csv("CTA.csv")
+head(tmp)
+```
+
+```{r}
+tmp$service_date <- as.Date(tmp$service_date, format="%m/%d/%Y")
+```
+
+```{r}
+data <- tmp[!duplicated(tmp$service_date), ]
+```
+
+### EDA
+
+```{r}
+# Distribution of Total Rides
+ggplot(data, aes(x = total_rides)) +
+  geom_histogram(bins = 30, fill = "blue", color = "black", alpha = 0.7) +
+  labs(title = "Distribution of Total Rides", x = "Total Rides", y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+# Add day of week column
+data <- data %>%
+  mutate(day_of_week = wday(service_date, label = TRUE))
+
+# Plot Total Rides by Day of Week
+ggplot(data, aes(x = day_of_week, y = total_rides)) +
+  geom_boxplot(fill = "orange", color = "black") +
+  labs(title = "Total Rides by Day of Week", x = "Day of Week", y = "Total Rides") +
+  theme_minimal()
+```
+
+```{r}
+# Plot Total Rides Over Time by Day Type
+ggplot(data, aes(x = service_date, y = total_rides, color = day_type)) +
+  geom_line() +
+  labs(title = "Total Rides Over Time by Day Type", x = "Date", y = "Total Rides") +
+  theme_minimal()
+```
+
+```{r}
+# Boxplot of Total Rides by Day Type
+ggplot(data, aes(x = day_type, y = total_rides, fill = day_type)) +
+  geom_boxplot() +
+  labs(title = "Total Rides by Day Type", x = "Day Type", y = "Total Rides") +
+  theme_minimal()
+```
+
+
+```{r}
+ggplot(data, aes(x = service_date, y = bus)) +
+  geom_line() +
+  labs(title = "Daily Bus Boardings", x = "Service Date", y = "Bus Boardings")
+```
+
+```{r}
+ggplot(data, aes(x = service_date, y = rail_boardings)) +
+  geom_line() +
+  labs(title = "Daily Rail Boardings", x = "Service Date", y = "Rail Boardings")
+```
+
+```{r}
+ggplot(data, aes(x = service_date, y = total_rides)) +
+  geom_line() +
+  labs(title = "Daily Total Rides", x = "Service Date", y = "Total Rides")
+```
+
+### Checking ACF, PACF
+
+```{r}
+# The result of the Augmented Dickey-Fuller (ADF) test indicates that the pre-intervention data is stationary.
+adf_test <- adf.test(data$total_rides[data$service_date < as.Date("2020-03-01")])
+print(adf_test)
+```
+
+```{r}
+acf(data$total_rides[data$service_date < as.Date("2020-03-01")])
+pacf(data$total_rides[data$service_date < as.Date("2020-03-01")])
+```
+
+```{r}
+# The residual plot shows that the residuals are fairly well centered around zero, though there is significant variability over time. The density of points around zero and the spread indicates that while the ARIMA model captures much of the trend, there is considerable noise.
+
+# Fit an ARIMA model as an example
+pre_intervention_data <- data$total_rides[data$service_date < as.Date("2020-03-01")]
+arima_model <- auto.arima(pre_intervention_data)
+residuals <- residuals(arima_model)
+
+# Plot residuals
+ggplot(data.frame(Date = data$service_date[data$service_date < as.Date("2020-03-01")], Residuals = residuals), aes(x = Date, y = Residuals)) +
+  geom_line() +
+  labs(title = "Residuals of Pre-Intervention Model", x = "Date", y = "Residuals") +
+  theme_minimal()
+```
+
+
+```{r}
+# The ACF plot of the residuals indicates that most of the autocorrelations are within the significance bounds, except for the first lag. This suggests that the residuals are largely behaving like white noise, which is a good indication that the ARIMA model has captured most of the structure in the data.
+
+# ACF of residuals
+acf(residuals)
+```
+
+```{r}
+# Plot the PACF of residuals
+pacf(residuals, main = "PACF of Residuals")
+```
+
+### EDA
+
+```{r}
+bus_ts <- ts(data$bus, frequency=365)
+rail_ts <- ts(data$rail_boardings, frequency=365)
+total_ts <- ts(data$total_rides, frequency=365)
+```
+
+```{r}
+adf.test(bus_ts, alternative="stationary")
+```
+
+```{r}
+adf.test(rail_ts, alternative="stationary")
+```
+
+```{r}
+adf.test(total_ts, alternative="stationary")
+```
+
+```{r}
+Acf(bus_ts, main = "Autocorrelation of Daily Bus Rides")
+Pacf(bus_ts, main = "Partial Autocorrelation of Daily Bus Rides")
+```
+
+```{r}
+yearly_summary <- data %>%
+  mutate(year = format(service_date, "%Y")) %>%
+  group_by(year) %>%
+  summarise(
+    yearly_bus = sum(bus, na.rm = TRUE),
+    yearly_rail = sum(rail_boardings, na.rm = TRUE),
+    yearly_total = sum(total_rides, na.rm = TRUE)
+  )
+```
+
+```{r}
+ggplot(yearly_summary, aes(x = year, y = yearly_bus)) +
+  geom_bar(stat = "identity", fill = "steelblue") +  # Bar plot
+  labs(title = "Yearly Sum of Bus Boardings", x = "Year", y = "Bus Boardings") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+ggplot(yearly_summary, aes(x = year, y = yearly_rail)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +  # Bar plot
+  labs(title = "Yearly Sum of Rail Boardings", x = "Year", y = "Rail Boardings") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Tilt x-axis labels
+```
+
+```{r}
+ggplot(yearly_summary, aes(x = year, y = yearly_total)) +
+  geom_bar(stat = "identity", fill = "darkred") +  # Bar plot
+  labs(title = "Yearly Total Rides", x = "Year", y = "Total Rides") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+monthly_summary <- data %>%
+  mutate(year = format(service_date, "%Y"),  # Extract year
+         month = format(service_date, "%B")) %>%  # Extract full month name
+  group_by(year, month) %>%
+  summarise(
+    monthly_bus = sum(bus, na.rm = TRUE),
+    monthly_rail = sum(rail_boardings, na.rm = TRUE),
+    monthly_total = sum(total_rides, na.rm = TRUE),
+    .groups = "drop"  # Drop grouping for easier manipulation later
+  )
+```
+
+
+```{r}
+# Filter data for January across all years
+january_data <- monthly_summary %>%
+  filter(month == "January")
+
+
+ggplot(january_data, aes(x = year)) +
+  geom_bar(aes(y = monthly_bus, fill = "Bus"), stat = "identity", position = "dodge") +
+  geom_bar(aes(y = monthly_rail, fill = "Rail"), stat = "identity", position = "dodge") +
+  labs(title = "January Transportation Boardings Across Years",
+       x = "Year",
+       y = "Boardings",
+       fill = "Transportation Mode") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("Bus" = "steelblue", "Rail" = "forestgreen"))
+```
+
+
+```{r}
+data_monthly_bus <- data %>%
+  group_by(month = as.yearmon(service_date)) %>%
+  summarise(bus_total = sum(bus, na.rm = TRUE))
+
+data_monthly_rail <- data %>%
+  group_by(month = as.yearmon(service_date)) %>%
+  summarise(rail_boardings_total = sum(rail_boardings, na.rm = TRUE))
+```
+
+## Causal Impact
+
+### Modelling Bus
+
+```{r}
+data_zoo_bus <- zoo(data_monthly_bus$bus_total, order.by = data_monthly_bus$month)
+data_zoo_rail <- zoo(data_monthly_rail$rail_boardings_total, order.by = data_monthly_rail$month)
+```
+
+```{r}
+start = as.yearmon("Jan 2001")
+end = as.yearmon("Feb 2024")
+pre_covid <- c(start, as.yearmon("Feb 2020"))
+post_covid <- c(as.yearmon("Mar 2020"), end)
+```
+
+```{r}
+covid19_impact_bus <- CausalImpact(data_zoo_bus, pre_covid, post_covid, model.args = list(niter = 5000, nseasons = 12))
+plot(covid19_impact_bus)
+```
+
+```{r}
+summary(covid19_impact_bus)
+```
+
+```{r}
+summary(covid19_impact_bus, "report")
+```
+
+```{r}
+actual <- data_zoo_bus[(length(pre_covid) + 1):length(data_zoo_bus)]
+predicted <- covid19_impact_bus$series$point.pred
+mse <- mean((actual - predicted)^2)
+mae <- mean(abs(actual - predicted))
+mape <- mean(abs((actual - predicted) / actual)) * 100
+# print(paste("Mean Squared Error (MSE):", mse))
+# print(paste("Mean Absolute Error (MAE):", mae))
+print(paste("Mean Absolute Percentage Error (MAPE):", mape))
+```
+
+### Modelling Rail Boardings
+
+```{r}
+start = as.yearmon("Jan 2001")
+end = as.yearmon("Feb 2024")
+pre_covid <- c(start, as.yearmon("Feb 2020"))
+post_covid <- c(as.yearmon("Mar 2020"), end)
+```
+
+```{r}
+covid19_impact_rail <- CausalImpact(data_zoo_rail, pre_covid, post_covid, model.args = list(niter = 1000, nseasons = 12))
+plot(covid19_impact_rail)
+```
+
+```{r}
+summary(covid19_impact_rail)
+```
+
+```{r}
+summary(covid19_impact_rail, "report")
+```
+
+```{r}
+actual <- data_zoo_rail[(length(pre_covid) + 1):length(data_zoo_rail)]
+predicted <- covid19_impact_rail$series$point.pred
+mse <- mean((actual - predicted)^2)
+mae <- mean(abs(actual - predicted))
+mape <- mean(abs((actual - predicted) / actual)) * 100
+# print(paste("Mean Squared Error (MSE):", mse))
+# print(paste("Mean Absolute Error (MAE):", mae))
+print(paste("Mean Absolute Percentage Error (MAPE):", mape))
+```
+
+### Modelling Total Rides
+
+```{r}
+data_total_rides <- data %>%
+  group_by(month = as.yearmon(service_date)) %>%
+  summarise(mon_total_rides = sum(total_rides, na.rm = TRUE))
+```
+
+```{r}
+data_zoo_total <- zoo(data_total_rides$mon_total_rides, order.by = data_total_rides$month)
+```
+
+```{r}
+overall_impact <- CausalImpact(data_zoo_total, pre_covid, post_covid, model.args = list(niter = 1000, nseasons = 12))
+plot(overall_impact)
+```
+
+```{r}
+plot(overall_impact, c("original", "pointwise"))
+```
+
+```{r}
+summary(overall_impact)
+```
+
+```{r}
+summary(overall_impact, "report")
+```
+
+```{r}
+actual <- data_zoo_total[(length(pre_covid) + 1):length(data_zoo_total)]
+predicted <- overall_impact$series$point.pred
+mse <- mean((actual - predicted)^2)
+mae <- mean(abs(actual - predicted))
+mape <- mean(abs((actual - predicted) / actual)) * 100
+# print(paste("Mean Squared Error (MSE):", mse))
+# print(paste("Mean Absolute Error (MAE):", mae))
+print(paste("Mean Absolute Percentage Error (MAPE):", mape))
+```
+
+### Modelling with Daily Seasonality
+
+```{r}
+data_zoo_all <- zoo(data$total_rides, order.by = data$service_date)
+```
+
+```{r}
+pre.covid <- as.Date(c("2001-01-01", "2020-03-12"))
+post.covid <- as.Date(c("2020-03-13", "2024-02-29"))
+```
+
+```{r}
+overall_impact_daily <- CausalImpact(data_zoo_all, pre.covid, post.covid, model.args = list(nseasons = 7, season.duration = 1))
+plot(overall_impact_daily)
+```
+
+```{r}
+plot(overall_impact_daily, c("original", "pointwise"))
+```
+
+```{r}
+summary(overall_impact_daily)
+```
+
+```{r}
+summary(overall_impact_daily, "report")
+```
+
+### Modelling with Weekly Seasonality
+
+```{r}
+data_weekly_rides <- data %>%
+  mutate(week = floor_date(service_date, unit = "week")) %>%
+  group_by(week) %>%
+  summarise(weekly_total_rides = sum(total_rides, na.rm = TRUE))
+```
+
+```{r}
+weekly_zoo_total <- zoo(data_weekly_rides$weekly_total_rides, order.by = data_weekly_rides$week)
+```
+
+```{r}
+overall_impact_weekly <- CausalImpact(weekly_zoo_total, pre.covid, post.covid, model.args = list(nseasons = 7, season.duration = 24))
+plot(overall_impact_weekly)
+```
+
+```{r}
+plot(overall_impact_weekly, c("original", "pointwise"))
+```
+
+```{r}
+summary(overall_impact_weekly)
+```
+
+```{r}
+summary(overall_impact_weekly, "report")
+```
+
+### Testing ARIMA
+
+```{r}
+ts_data <- ts(data_monthly_bus$bus_total, start = c(2001, 1), frequency = 12)
+```
+
+```{r}
+ts_data_pre_covid <- window(ts_data, start = pre_covid[1], end = pre_covid[2])
+ts_data_post_covid <- window(ts_data, start = post_covid[1], end = post_covid[2])
+```
+
+```{r}
+arima <- auto.arima(ts_data_pre_covid,seasonal = TRUE,lambda = "auto")
+arima
+```
+
+```{r}
+checkresiduals(arima)
+```
+
+```{r}
+forecast_values <- forecast(arima, h = length(ts_data_post_covid))
+
+# Extract the forecasted values
+forecasted <- forecast_values$mean
+rmse <- sqrt(mean((ts_data_post_covid - forecasted)^2))
+mape <- mean(abs((ts_data_post_covid - forecasted) / ts_data_post_covid)) * 100
+
+print(paste("RMSE:", round(rmse, 2)))
+print(paste("MAPE:", round(mape, 2)))
+```
+
+
+
+
+

@@ -1,0 +1,265 @@
+---
+title: "PROPHET"
+output: html_document
+date: "2024-05-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(readr)
+library(prophet)
+
+# Load the dataset
+file_path <- 'CTA.csv'
+ridership_data <- read_csv(file_path)
+
+# Convert service_date to Date type
+ridership_data <- ridership_data %>%
+  mutate(service_date = mdy(service_date))
+
+# Select relevant columns
+prophet_data <- ridership_data %>%
+  select(service_date, total_rides) %>%
+  rename(ds = service_date, y = total_rides)
+
+# Display the first few rows
+head(prophet_data)
+
+```
+
+Stable Patterns: Before 2020, the ridership appears to be relatively stable with some seasonality and weekly variations.
+Sharp Drop: There is a significant drop around the year 2020, likely due to the impact of COVID-19.
+Recovery Phase: Post-2020, there is a noticeable recovery trend in ridership.
+
+```{r}
+library(ggplot2)
+# Plot the total ridership over time
+ggplot(ridership_data, aes(x = service_date, y = total_rides)) +
+  geom_line() +
+  labs(title = "Total Ridership Over Time", x = "Date", y = "Total Rides")
+
+# Summary statistics
+summary(ridership_data)
+
+# Check for missing values
+sum(is.na(ridership_data))
+
+# Summary statistics
+summary(ridership_data)
+
+
+```
+```{r}
+# Train the Prophet model
+# Initialize the Prophet model
+model <- prophet()
+
+# Fit the model
+model <- fit.prophet(model,prophet_data)
+
+# Create a dataframe to hold predictions
+future <- make_future_dataframe(model, periods = 30)  # Forecasting for the next 30 days
+
+# Make predictions
+forecast <- predict(model, future)
+
+# Visualize the forecast
+# Plot the forecast
+plot(model, forecast) +
+  labs(title = "Ridership Forecast", x = "Date", y = "Total Rides")
+
+# Plot the forecast components
+prophet_plot_components(model, forecast)
+
+# Cross-validation
+cv <- cross_validation(model, initial = 365*10, period = 180, horizon = 365, units = 'days')
+performance_metrics(cv)
+
+# Plot cross-validation performance
+plot_cross_validation_metric(cv, metric = 'rmse')
+
+```
+```{r}
+# Define the holidays dataframe with additional Thanksgiving dates
+holidays <- data.frame(
+  ds = as.Date(c('2020-12-25', '2021-01-01', '2021-07-04', '2020-11-26', '2021-11-25')),  # Example dates including Thanksgiving
+  holiday = c('Christmas', 'New Year', 'Independence Day', 'Thanksgiving', 'Thanksgiving')
+)
+# Train the Prophet model with holidays
+model <- prophet(holidays = holidays)
+
+# Fit the model
+model <- fit.prophet(model, prophet_data)
+
+# Create a dataframe to hold predictions
+future <- make_future_dataframe(model, periods = 30)  # Forecasting for the next 30 days
+
+# Make predictions
+forecast <- predict(model, future)
+
+# Visualize the forecast
+# Plot the forecast
+plot(model, forecast) +
+  labs(title = "Ridership Forecast with Holidays", x = "Date", y = "Total Rides")
+
+# Plot the forecast components
+prophet_plot_components(model, forecast)
+# Cross-validation
+cv <- cross_validation(model, initial = 365 * 10, period = 180, horizon = 365, units = 'days')
+performance_metrics(cv)
+
+# Plot cross-validation performance
+plot_cross_validation_metric(cv, metric = 'rmse')
+
+```
+```{r}
+# Calculate residuals
+residuals <- prophet_data$y - forecast$yhat[1:nrow(prophet_data)]
+
+# Plot residuals
+ggplot(data.frame(ds = prophet_data$ds, residuals = residuals), aes(x = ds, y = residuals)) +
+  geom_line() +
+  labs(title = "Residuals Over Time", x = "Date", y = "Residuals")
+
+
+```
+
+```{r}
+# Split data into pre-2020 and post-2020 periods
+pre_2020_data <- prophet_data %>% filter(ds < as.Date("2020-01-01"))
+post_2020_data <- prophet_data %>% filter(ds >= as.Date("2020-01-01"))
+
+# Model for pre-2020 period
+model_pre_2020 <- prophet(holidays = holidays)
+model_pre_2020 <- fit.prophet(model_pre_2020, pre_2020_data)
+future_pre_2020 <- make_future_dataframe(model_pre_2020, periods = 30)
+forecast_pre_2020 <- predict(model_pre_2020, future_pre_2020)
+
+# Model for post-2020 period
+model_post_2020 <- prophet(holidays = holidays)
+model_post_2020 <- fit.prophet(model_post_2020, post_2020_data)
+future_post_2020 <- make_future_dataframe(model_post_2020, periods = 30)
+forecast_post_2020 <- predict(model_post_2020, future_post_2020)
+
+# Visualize the forecasts
+plot(model_pre_2020, forecast_pre_2020) +
+  labs(title = "Ridership Forecast Pre-2020", x = "Date", y = "Total Rides")
+plot(model_post_2020, forecast_post_2020) +
+  labs(title = "Ridership Forecast Post-2020", x = "Date", y = "Total Rides")
+
+# Plot the forecast components
+prophet_plot_components(model_pre_2020, forecast_pre_2020)
+prophet_plot_components(model_post_2020, forecast_post_2020)
+
+
+```
+
+```{r}
+# Pre-2020 Model Validation
+cv_pre_2020 <- cross_validation(model_pre_2020, initial = 365*5, period = 180, horizon = 365, units = 'days')
+performance_pre_2020 <- performance_metrics(cv_pre_2020)
+plot_cross_validation_metric(cv_pre_2020, metric = 'rmse')
+
+# Post-2020 Model Validation
+cv_post_2020 <- cross_validation(model_post_2020, initial = 365*1, period = 90, horizon = 180, units = 'days')
+performance_post_2020 <- performance_metrics(cv_post_2020)
+plot_cross_validation_metric(cv_post_2020, metric = 'rmse')
+# Display performance metrics for pre-2020 model
+print("Pre-2020 Model Performance Metrics:")
+print(performance_pre_2020)
+
+# Display performance metrics for post-2020 model
+print("Post-2020 Model Performance Metrics:")
+print(performance_post_2020)
+
+# Count the rows in pre_2020_data
+test_size_precovid <- nrow(pre_2020_data) - (365 * 5)
+print(test_size_precovid)
+
+
+```
+
+```{r}
+# Calculate residuals for pre-2020
+residuals_pre_2020 <- pre_2020_data$y - forecast_pre_2020$yhat[1:nrow(pre_2020_data)]
+
+# Plot residuals for pre-2020
+ggplot(data.frame(ds = pre_2020_data$ds, residuals = residuals_pre_2020), aes(x = ds, y = residuals)) +
+  geom_line() +
+  labs(title = "Residuals Over Time (Pre-2020)", x = "Date", y = "Residuals")
+
+# Calculate residuals for post-2020
+residuals_post_2020 <- post_2020_data$y - forecast_post_2020$yhat[1:nrow(post_2020_data)]
+
+# Plot residuals for post-2020
+ggplot(data.frame(ds = post_2020_data$ds, residuals = residuals_post_2020), aes(x = ds, y = residuals)) +
+  geom_line() +
+  labs(title = "Residuals Over Time (Post-2020)", x = "Date", y = "Residuals")
+
+
+```
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(prophet)
+library(ggplot2)
+
+# Assuming prophet_data is already loaded and contains the necessary data
+
+# Split data into pre-2020 and post-2020 periods
+pre_2020_data <- prophet_data %>% filter(ds < as.Date("2020-01-01"))
+post_2020_data <- prophet_data %>% filter(ds >= as.Date("2020-01-01"))
+
+# Define training and test periods for post-2020 data
+train_post_2020_data <- post_2020_data %>% filter(ds < as.Date("2024-01-01"))
+test_post_2020_data <- post_2020_data %>% filter(ds >= as.Date("2024-01-01"))
+
+# Initialize the Prophet model with holidays
+holidays <- data.frame(
+  ds = as.Date(c('2020-12-25', '2021-01-01', '2021-07-04', '2020-11-26', '2021-11-25')),  # Example dates including Thanksgiving
+  holiday = c('Christmas', 'New Year', 'Independence Day', 'Thanksgiving', 'Thanksgiving')
+)
+
+# Model for post-2020 period using training data
+model_post_2020 <- prophet(holidays = holidays)
+
+# Fit the model on the training data
+model_post_2020 <- fit.prophet(model_post_2020, train_post_2020_data)
+
+# Create a dataframe to hold predictions for the test period
+future_post_2020_test <- make_future_dataframe(model_post_2020, periods = nrow(test_post_2020_data))
+
+# Make predictions on the test data
+forecast_post_2020_test <- predict(model_post_2020, future_post_2020_test)
+
+# Combine actual test data with predictions for evaluation
+actual_vs_forecast_test <- test_post_2020_data %>%
+  left_join(forecast_post_2020_test %>% select(ds, yhat), by = "ds") %>%
+  rename(actual = y, forecast = yhat)
+
+# Visualize the actual vs forecasted values for the test period
+ggplot(actual_vs_forecast_test, aes(x = ds)) +
+  geom_line(aes(y = actual, color = "Actual")) +
+  geom_line(aes(y = forecast, color = "Forecast")) +
+  labs(title = "Actual vs Forecasted Ridership Post-2020 (Test Period)", x = "Date", y = "Total Rides") +
+  scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
+  theme_minimal()
+
+# Evaluate the model performance using cross-validation
+cv_post_2020 <- cross_validation(model_post_2020, initial = 365, period = 90, horizon = 180, units = 'days')
+performance_post_2020 <- performance_metrics(cv_post_2020)
+
+# Display performance metrics
+print("Post-2020 Model Performance Metrics:")
+print(performance_post_2020)
+
+# Plot cross-validation performance
+plot_cross_validation_metric(cv_post_2020, metric = 'rmse')
+
+```

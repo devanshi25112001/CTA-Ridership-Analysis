@@ -1,0 +1,524 @@
+---
+title: "finalproject"
+author: "Devon Delgado"
+date: "2024-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Applying ARIMAX with Intervention Analysis to model the impact of COVID-19 on bus and train ridership
+
+# Read Data and Import Libraries
+
+```{r cars}
+library(tseries)
+library(forecast)
+library(zoo)
+library(dplyr)
+library(TSA)
+library(MTS)
+library(lmtest)
+library(ggplot2)
+library(Metrics)
+
+df <- read.csv('CTA.csv')
+df$service_date <- as.Date(df$service_date, format="%m/%d/%Y")
+df <- df[order(df$service_date), ]
+df <- df[!duplicated(df$service_date),]
+
+pre.covid <- df[df$service_date < as.Date("2020-03-13"),]
+post.covid <- df[df$service_date >= as.Date("2020-03-13"),]
+
+pre.covid <- pre.covid[order(pre.covid$service_date), ]
+post.covid <- post.covid[order(post.covid$service_date), ]
+
+
+row.names(pre.covid) <- NULL
+row.names(post.covid) <- NULL
+```
+
+On March 19th, 2020, Chicago declared a state of emergency for the COVID 19 Pandemic, which lines up with the significant drop of ridership here. The United states declared a state of emergency for the COVID 19 pandemic on March 13th, 2020, which explains the initial drop a few days earlier. The data has been split to pre-COVID and post-COVID for analysis.
+
+# Exploratory Data Analysis
+
+Total rides is the sum of bus and rail_boardings. We can do a quick check to ensure this is the case, which it is.
+
+```{r}
+all(df$rail_boardings + df$bus == df$total_rides)
+```
+
+## Pre-COVID
+
+### Total Rides
+
+Based on the below ACF plot, there is very strong weekly seasonality in the data. Each day of the week tends to behave like previous same days of the week. There is an extremely strong autoregressive process that does not die down, suggesting non stationarity. The variance is not changing over time, but it does trend upwards as time goes on just before the COVID pandemic.
+
+```{r}
+plot(pre.covid$service_date, pre.covid$total_rides, type='l')
+
+acf(pre.covid$total_rides, 200)
+```
+
+The data is not stationary, so we need to difference it. The results of the below tests confirm that it is indeed stationary now.
+
+```{r, warning=FALSE}
+kpss.test(diff(pre.covid$total_rides), null='L')
+adf.test(diff(pre.covid$total_rides))
+```
+
+From the STL plot below, in addition to short term seasonality of weekly, there is also annual seasonality given by the similarity in the trend lines at the 1 year marks. The time is in weeks.
+
+```{r, fig.width=10}
+tot.ts <- ts(pre.covid$total_rides[1:1000], frequency=7)
+
+plot(stl(tot.ts, s.window='periodic'), main='Pre-COVID Total Rides STL Decomposition ( 2001 - 2003)')
+```
+
+### Rail Boardings
+
+Based on the below ACF plot, there is very strong weekly seasonality in the data. Each day of the week tends to behave like previous same days of the week. There is an extremely strong autoregressive process that does not die down, suggesting non stationarity. The variance is not changing over time, but it does trend upwards as time goes on just before the COVID pandemic.
+
+```{r}
+plot(pre.covid$service_date, pre.covid$rail_boardings, type='l')
+
+acf(pre.covid$rail_boardings, 200)
+```
+
+The data is not stationary, so we need to difference it. The results of the below tests confirm that it is indeed stationary now.
+
+```{r, warning=FALSE}
+kpss.test(diff(pre.covid$rail_boardings), null='L')
+adf.test(diff(pre.covid$rail_boardings))
+```
+
+From the STL plot below, in addition to short term seasonality of weekly, there is also annual seasonality given by the similarity in the trend lines at the 1 year marks. The time is in weeks.
+
+```{r, fig.width=10}
+rail.ts <- ts(pre.covid$rail_boardings[1:1000], frequency=7)
+
+plot(stl(rail.ts, s.window='periodic'), main='Pre-COVID Total Rides STL Decomposition (2001 - 2003)')
+```
+
+### Bus Boardings
+
+```{r}
+pacf(pre.covid$total_rides, 200, main="Autocorrelation of Pre-COVID Total Ridership")
+```
+
+The data is not stationary, so we need to difference it. The results of the below tests confirm that it is indeed stationary now.
+
+```{r, warning=FALSE}
+kpss.test(diff(pre.covid$bus), null='L')
+adf.test(diff(pre.covid$bus))
+```
+
+```{r, fig.width=10}
+bus.ts <- ts(pre.covid$bus, frequency=7)
+
+plot(stl(bus.ts, s.window='periodic'), main='Pre-COVID Bus STL Decomposition')
+```
+
+## Post-COVID
+
+### Rail Boardings
+
+Rail boardings also exhibit a very long memory process, suggesting seasonality at the weekly level as noted by the ACF peaks.
+
+```{r}
+plot(df$bus, type='l')
+```
+
+```{r}
+plot(post.covid$service_date, post.covid$rail_boardings, type='l')
+
+acf(post.covid$rail_boardings, 400)
+```
+
+The data is not stationary, so we need to difference it. The results of the below tests confirm that it is indeed stationary when differencing.
+
+```{r, warning=FALSE}
+kpss.test(diff(post.covid$rail_boardings), null='L')
+adf.test(diff(post.covid$rail_boardings))
+```
+
+From the STL plot below, in addition to short term seasonality of weekly, there is also annual seasonality given by the similarity in the trend lines at the 1 year marks. The time is in weeks.
+
+```{r, fig.width=10}
+rail.ts <- ts(post.covid$total_rides, frequency=7)
+
+plot(stl(rail.ts, s.window='periodic'),main='Post-COVID Total Rides STL Decomposition')
+```
+
+### Bus Boardings
+
+In bus boardings, there is a heteroscedastic upward trend from the initial drop in ridership in March 2020. The ACF plot shows similar weekly similarity in the pre-COVID era.
+
+```{r}
+plot(post.covid$service_date, post.covid$bus, type='l')
+
+acf(post.covid$bus, 200)
+```
+
+The data is not stationary, so we need to difference it. The results of the below tests confirm that it is indeed stationary now.
+
+```{r, warning=FALSE}
+kpss.test(diff(post.covid$bus), null='L')
+adf.test(diff(post.covid$bus))
+```
+
+There is a similar trend in the Post-COVID era as the pre-COVID era in terms of yearly seasonality, albeit much lower ridership.
+
+```{r, fig.width=10}
+bus.ts <- ts(post.covid$bus, frequency=7)
+
+plot(stl(bus.ts, s.window='periodic'), main='Post-COVID Bus STL Decomposition')
+```
+
+# Post-COVID Model Development
+
+We will model both Bus and Rail using intervention analysis given the COVID-19 effect on March 13, 2020.
+
+### Bus
+
+#### Use fourier series to model multiple seasonality and find p, d, q of Pre-COVID ARIMA
+
+```{r}
+intervention_date <- as.Date("2020-03-13")
+
+train_set <- df[df$service_date < as.Date("2024-01-01"), ]
+test_set <- df[df$service_date >= as.Date("2024-01-01"), ]
+
+K_weekly <- 3
+K_monthly <- 6
+K_yearly <- 12
+
+ts_bus <- msts(df$bus, seasonal.periods = c(7, 30, 365.25))
+
+# Create Fourier terms for weekly and yearly seasonality for the entire dataset
+fourier_terms_bus <- fourier(ts_bus, K = c(K_weekly, K_monthly, K_yearly))
+
+fourier_terms_bus_train <- fourier_terms_bus[1:nrow(train_set), ]
+fourier_terms_bus_test <- fourier_terms_bus[(nrow(train_set) + 1):nrow(df), ]
+fourier_terms_bus_precovid <- fourier_terms_bus[1:nrow(pre.covid), ]
+
+
+baseline_arima_bus <- auto.arima(log(pre.covid$bus), xreg = fourier_terms_bus_precovid, seasonal=FALSE)
+
+arima_orders_bus <- c(baseline_arima_bus$arma[1], baseline_arima_bus$arma[6], baseline_arima_bus$arma[2])
+```
+
+### Fit Initial ARIMAX model with a pulse on March 13, 2020
+
+```{r}
+pulse_train <- 1*(seq(train_set$bus) == 6708)
+first.model.x <- arimax(log(train_set$bus), order=arima_orders_bus, xtransf=data.frame(pulse_train), xreg=fourier_terms_bus_train, transfer=list(c(1,0)))
+summary(first.model.x)
+```
+
+### Apply ARMA coefficients from ARIMAX model to model the intervention
+
+```{r}
+steps.ahead = length(test_set$bus)
+intervention_index <- 6708
+decay_rate <- 0.0005 
+
+# Create the slowly decaying ramp function
+create_ramp <- function(length, start_idx, decay_rate) {
+  ramp <- numeric(length)
+  for (i in start_idx:length) {
+    ramp[i] <- exp(-decay_rate * (i - start_idx))
+  }
+  return(ramp)
+}
+
+# Create the ramp function for the entire period (train + test)
+total_length <- length(train_set$bus) + steps.ahead
+ramp_function <- create_ramp(total_length, intervention_index, decay_rate)
+
+# Extract the ramp function for the training period
+tf <- -ramp_function
+
+xreg_train <- cbind(fourier_terms_bus_train, tf[1:(length(tf) - steps.ahead)])
+bus.forecast.arima <- Arima(log(train_set$bus), order=arima_orders_bus, xreg = xreg_train)
+```
+
+The below plot shows how the intervention strength begins at -1 and slowly decays as time moves on. The strength of the COVID intervention is still present even four years after the initial intervention.
+```{r}
+plot(df$service_date, tf, main='Display of Intervention Strength Regressor')
+
+```
+### Forecasts
+
+The ARIMAX forecasts are slightly narrower than the actual boardings, but the seasonality is captured well by the fourier series.
+
+```{r}
+start_idx <- length(tf) - steps.ahead + 1
+
+xreg_forecast <- cbind(fourier_terms_bus_test, tf[start_idx:length(tf)]+1)
+
+pred <- predict(bus.forecast.arima, n.ahead = steps.ahead, newxreg = xreg_forecast)
+preds <- exp(pred$pred)
+
+bus_plot_data <- data.frame(
+  Date = test_set$service_date,
+  Actual = test_set$bus,
+  Forecasted = preds
+)
+
+ggplot(bus_plot_data, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual")) +
+  geom_line(aes(y = Forecasted, color = "Forecasted")) +
+  labs(title = "Bus Boardings: Actual vs Forecasted",
+       y = "Boardings",
+       x = "Date (2024)") +
+  scale_color_manual(name = "Legend", values = c("Actual" = "blue", "Forecasted" = "red")) +
+  theme_minimal()
+```
+
+### EVALUATION METRICS
+
+```{r}
+
+
+rmse_value <- rmse(bus_plot_data$Actual, bus_plot_data$Forecasted)
+mae_value <- mae(bus_plot_data$Actual, bus_plot_data$Forecasted)
+mape_value <- mape(bus_plot_data$Actual, bus_plot_data$Forecasted)
+
+tolerance <- 0.3  
+coverage_value <- mean(abs(bus_plot_data$Actual - bus_plot_data$Forecasted) / bus_plot_data$Actual <= tolerance) * 100
+
+# Print the results
+cat("2024 Forecasts for Bus Ridership Metrics \n")
+cat("RMSE:", rmse_value, "\n")
+cat("MAE:", mae_value, "\n")
+cat("MAPE:", mape_value, "\n")
+cat("Coverage:", coverage_value, "%\n")
+```
+
+### Rail
+
+#### Use fourier series to model multiple seasonality and find p, d, q of Pre-COVID ARIMA
+
+```{r}
+# Define the intervention date
+intervention_date <- as.Date("2020-03-13")
+
+train_set <- df[df$service_date < as.Date("2024-01-01"), ]
+test_set <- df[df$service_date >= as.Date("2024-01-01"), ]
+
+K_weekly <- 3
+K_monthly <- 6
+K_yearly <- 12
+
+ts_rail <- msts(df$rail_boardings, seasonal.periods = c(7, 30, 365.25))
+
+fourier_terms_rail <- fourier(ts_rail, K = c(K_weekly, K_monthly, K_yearly))
+
+fourier_terms_rail_train <- fourier_terms_rail[1:nrow(train_set), ]
+fourier_terms_rail_test <- fourier_terms_rail[(nrow(train_set) + 1):nrow(df), ]
+fourier_terms_rail_precovid <- fourier_terms_rail[1:nrow(pre.covid), ]
+
+baseline_arima_rail <- auto.arima(log(pre.covid$rail_boardings), xreg = fourier_terms_rail_precovid, seasonal=FALSE)
+summary(baseline_arima_rail)
+
+arima_orders_rail <- c(baseline_arima_rail$arma[1], baseline_arima_rail$arma[6], baseline_arima_rail$arma[2])
+```
+
+### Fit Initial ARIMAX model with a pulse on March 13, 2020
+
+```{r}
+pulse_train <- 1*(seq(train_set$rail_boardings) == 6708)
+
+first.model.x <- arimax(log(train_set$rail_boardings), order=arima_orders_rail, xtransf=data.frame(pulse_train), xreg=fourier_terms_rail_train, transfer=list(c(1,0)))
+summary(first.model.x)
+```
+
+### Apply ARMA coefficients from ARIMAX model to model the intervention
+
+```{r}
+steps.ahead = length(test_set$rail_boardings)
+
+intervention_index <- 6708
+decay_rate <- 0.0005 
+
+# Create the slowly decaying ramp function
+create_ramp <- function(length, start_idx, decay_rate) {
+  ramp <- numeric(length)
+  for (i in start_idx:length) {
+    ramp[i] <- exp(-decay_rate * (i - start_idx))
+  }
+  return(ramp)
+}
+
+# Create the ramp function for the entire period (train + test)
+total_length <- length(train_set$bus) + steps.ahead
+ramp_function <- create_ramp(total_length, intervention_index, decay_rate)
+
+# Extract the ramp function for the training period
+tf <- -ramp_function
+
+xreg_train <- cbind(fourier_terms_rail_train, tf[1:(length(tf) - steps.ahead)])
+
+rail.forecast.arima <- Arima(log(train_set$rail_boardings), order=arima_orders_rail, xreg = xreg_train)
+rail.forecast.arima
+```
+
+### Forecast
+
+```{r}
+start_idx <- length(tf) - steps.ahead + 1
+
+xreg_forecast <- cbind(fourier_terms_rail_test, tf[start_idx:length(tf)])
+
+pred <- predict(rail.forecast.arima, n.ahead = steps.ahead, newxreg = xreg_forecast)
+
+preds <- exp(pred$pred)
+
+rail_plot_data <- data.frame(
+  Date = test_set$service_date,
+  Actual = test_set$rail_boardings,
+  Forecasted = preds
+)
+
+ggplot(rail_plot_data, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual")) +
+  geom_line(aes(y = Forecasted, color = "Forecasted")) +
+  labs(title = "Rail Boardings: Actual vs Forecasted",
+       y = "Boardings",
+       x = "Date (2024)") +
+  scale_color_manual(name = "Legend", values = c("Actual" = "blue", "Forecasted" = "red")) +
+  theme_minimal()
+```
+
+### Evaluation Metrics
+
+```{r}
+rmse_value <- rmse(rail_plot_data$Actual, rail_plot_data$Forecasted)
+mae_value <- mae(rail_plot_data$Actual, rail_plot_data$Forecasted)
+mape_value <- mape(rail_plot_data$Actual, rail_plot_data$Forecasted)
+
+# Calculate Coverage 
+tolerance <- 0.3  
+coverage_value <- mean(abs(rail_plot_data$Actual - rail_plot_data$Forecasted) / rail_plot_data$Actual <= tolerance) * 100
+
+# Print the results
+cat("2024 Forecasts for Rail Ridership Metrics \n")
+cat("RMSE:", rmse_value, "\n")
+cat("MAE:", mae_value, "\n")
+cat("MAPE:", mape_value, "\n")
+cat("Coverage:", coverage_value, "%\n")
+```
+
+## Total Ridership
+
+#### Use fourier series to model multiple seasonality and find p, d, q of Pre-COVID ARIMA
+
+```{r}
+# Define the intervention date
+intervention_date <- as.Date("2020-03-13")
+
+train_set <- df[df$service_date < as.Date("2024-01-01"), ]
+test_set <- df[df$service_date >= as.Date("2024-01-01"), ]
+
+K_weekly <- 3
+K_monthly <- 6
+K_yearly <- 12
+
+ts_tot <- msts(df$total_rides, seasonal.periods = c(7, 30, 365.25))
+
+fourier_terms_tot <- fourier(ts_tot, K = c(K_weekly, K_monthly, K_yearly))
+
+fourier_terms_tot_train <- fourier_terms_tot[1:nrow(train_set), ]
+fourier_terms_tot_test <- fourier_terms_tot[(nrow(train_set) + 1):nrow(df), ]
+fourier_terms_tot_precovid <- fourier_terms_tot[1:nrow(pre.covid), ]
+
+baseline_arima_tot <- auto.arima(log(pre.covid$total_rides), xreg = fourier_terms_tot_precovid, seasonal=FALSE)
+summary(baseline_arima_tot)
+
+arima_orders_tot <- c(baseline_arima_tot$arma[1], baseline_arima_tot$arma[6], baseline_arima_tot$arma[2])
+```
+
+### Fit Initial ARIMAX model with a pulse on March 13, 2020
+
+```{r}
+pulse_train <- 1*(seq(train_set$total_rides) == 6708)
+
+first.model.x <- arimax(log(train_set$total_rides), order=arima_orders_tot, xtransf=data.frame(pulse_train), xreg=fourier_terms_tot_train, transfer=list(c(1,0)))
+summary(first.model.x)
+```
+
+### Apply ARMA coefficients from ARIMAX model to model the intervention
+
+```{r}
+steps.ahead = length(test_set$total_rides)
+
+intervention_index <- 6708
+decay_rate <- 0.0005  # Adjust decay rate as needed
+
+# Create the slowly decaying ramp function
+create_ramp <- function(length, start_idx, decay_rate) {
+  ramp <- numeric(length)
+  for (i in start_idx:length) {
+    ramp[i] <- exp(-decay_rate * (i - start_idx))
+  }
+  return(ramp)
+}
+
+# Create the ramp function for the entire period (train + test)
+total_length <- length(train_set$bus) + steps.ahead
+ramp_function <-  create_ramp(total_length, intervention_index, decay_rate)
+tf <- -ramp_function
+
+xreg_train <- cbind(fourier_terms_tot_train, tf[1:(length(tf) - steps.ahead)])
+
+tot.forecast.arima <- Arima(log(train_set$total_rides), order=arima_orders_tot, xreg = xreg_train)
+tot.forecast.arima
+```
+
+### Forecast
+
+```{r}
+
+start_idx <- length(tf) - steps.ahead + 1
+
+xreg_forecast <- cbind(fourier_terms_tot_test, tf[start_idx:length(tf)])
+
+pred <- predict(tot.forecast.arima, n.ahead = steps.ahead, newxreg = xreg_forecast)
+
+preds <- exp(pred$pred)
+
+tot_plot_data <- data.frame(
+  Date = test_set$service_date,
+  Actual = test_set$total_rides,
+  Forecasted = preds
+)
+
+ggplot(tot_plot_data, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual")) +
+  geom_line(aes(y = Forecasted, color = "Forecasted")) +
+  labs(title = "Total Boardings: Actual vs Forecasted",
+       y = "Boardings",
+       x = "Date (2024)") +
+  scale_color_manual(name = "Legend", values = c("Actual" = "blue", "Forecasted" = "red")) +
+  theme_minimal()
+```
+
+```{r}
+rmse_value <- rmse(tot_plot_data$Actual, tot_plot_data$Forecasted)
+mae_value <- mae(tot_plot_data$Actual, tot_plot_data$Forecasted)
+mape_value <- mape(tot_plot_data$Actual, tot_plot_data$Forecasted)
+
+# Calculate Coverage 
+tolerance <- 0.3  
+coverage_value <- mean(abs(tot_plot_data$Actual - tot_plot_data$Forecasted) / tot_plot_data$Actual <= tolerance) * 100
+
+# Print the results
+cat("2024 Forecasts for Rail Ridership Metrics \n")
+cat("RMSE:", rmse_value, "\n")
+cat("MAE:", mae_value, "\n")
+cat("MAPE:", mape_value, "\n")
+cat("Coverage:", coverage_value, "%\n")
+```

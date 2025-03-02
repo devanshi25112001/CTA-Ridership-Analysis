@@ -1,0 +1,103 @@
+---
+title: "Final_TBATS_Karan"
+output: html_document
+date: "2024-05-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cars}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(forecast)
+library(readr)
+library(tseries)
+library(TSA)
+```
+
+```{r}
+#setwd("D:/University of Chicago/Courses/ADSP 31006 IP02 Time Series Analysis and Forecasting/Final #Project")
+```
+
+```{r}
+tmp <- read_csv("CTA.csv")
+head(tmp)
+```
+
+```{r}
+tmp$service_date <- as.Date(tmp$service_date, format="%m/%d/%Y")
+data <- tmp[!duplicated(tmp$service_date), ]
+data_filtered <- data[data$service_date >= as.Date("2020-03-13"), ]
+```
+
+```{r}
+ts_data <- ts(data_filtered$total_rides, start = c(2020, 73), frequency = 365)
+train_start <- c(2020, 73)  # March 13, 2020
+train_end <- c(2023, 365)   # June 30, 2023
+test_start <- c(2024, 1)    # July 1, 2023
+test_end <- c(2024, 60)    # December 31, 2023
+
+# Split the data into training and test sets
+train_data <- window(ts_data, start = train_start, end = train_end)
+test_data <- window(ts_data, start = test_start, end = test_end)
+```
+
+```{r}
+periodogram(ts_data)
+```
+
+```{r}
+spec <- spec.pgram(ts_data, log = "no", main = "Periodogram of Total Rides", xlab = "Frequency", ylab = "Spectral Density")
+```
+
+
+```{r}
+tsdisplay(train_data)
+```
+
+```{r}
+tbats_model <- tbats(train_data, use.box.cox = TRUE ,use.parallel = TRUE, seasonal.periods = c(7,30,365),num.cores = 7)
+tbats_model
+```
+
+```{r}
+tbats_forecast <- forecast(tbats_model, h = length(test_data))
+plot(tbats_forecast)
+lines(test_data, col = 'red')
+```
+
+```{r}
+autoplot(tbats_forecast) +
+  autolayer(test)+
+  labs(title = "TBATS Model Forecast", x = "Date", y = "Total Rides") +
+  theme_minimal()
+```
+
+
+```{r}
+accuracy(tbats_forecast,test_data)
+```
+
+
+```{r}
+# Calculate RMSE
+rmse <- sqrt(mean((tbats_forecast$mean - test_data)^2))
+
+# Calculate MSE
+mse <- mean((tbats_forecast$mean - test_data)^2)
+
+# Calculate MAPE
+mape <- mean(abs((test_data - tbats_forecast$mean)/test_data)) * 100
+
+mae <- mean(abs(test_data - tbats_forecast$mean))
+
+# Print the MAE result
+print(paste("MAE:", round(mae, 2)))
+print(paste("RMSE:", round(rmse, 2)))
+print(paste("MSE:", round(mse, 2)))
+print(paste("MAPE:", round(mape, 2)))
+```
+
