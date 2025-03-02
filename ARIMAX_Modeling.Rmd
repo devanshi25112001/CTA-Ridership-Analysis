@@ -1,9 +1,4 @@
----
-title: "finalproject"
-author: "Devon Delgado"
-date: "2024-05-13"
-output: html_document
----
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
