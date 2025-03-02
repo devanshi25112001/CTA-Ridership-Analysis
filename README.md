@@ -14,8 +14,7 @@ The **COVID-19 pandemic** significantly reduced public transit ridership, affect
 - **Nethra Subramanian**
 - **Devon Delgado**
 - **Karan Mehta**
-- 
-- 
+
 ## 📊 Dataset Information
 
 - **Source:** [City of Chicago Data Portal](https://data.cityofchicago.org/Transportation/CTA-Ridership-Daily-Boarding-Totals/6iiy-9s97/about_data)
