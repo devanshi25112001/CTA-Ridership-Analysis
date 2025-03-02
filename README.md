@@ -8,6 +8,14 @@ This project analyzes the impact of **COVID-19 on Chicago Transit Authority (CTA
 
 The **COVID-19 pandemic** significantly reduced public transit ridership, affecting **operational planning** for CTA. As ridership trends recover, accurate forecasting models are needed to **optimize resources** and maintain efficiency.
 
+## 👥 Team Members
+
+- **Devanshi Ledwani**
+- **Nethra Subramanian**
+- **Devon Delgado**
+- **Karan Mehta**
+- 
+- 
 ## 📊 Dataset Information
 
 - **Source:** [City of Chicago Data Portal](https://data.cityofchicago.org/Transportation/CTA-Ridership-Daily-Boarding-Totals/6iiy-9s97/about_data)
